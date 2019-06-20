@@ -7,11 +7,12 @@ from collections import OrderedDict
 import mock
 import pytest
 import requests
+import requests_kerberos
 from requests.exceptions import ConnectTimeout, ProxyError
 from six import iteritems
 from urllib3.exceptions import InsecureRequestWarning
 
-from datadog_checks.base import AgentCheck
+from datadog_checks.base import AgentCheck, ConfigurationError
 from datadog_checks.base.utils.http import STANDARD_FIELDS, RequestsWrapper
 from datadog_checks.dev import EnvVars
 
@@ -155,6 +156,92 @@ class TestAuth:
         http = RequestsWrapper(instance, init_config)
 
         assert http.options['auth'] is None
+
+    def test_config_kerberos(self):
+        instance = {'kerberos_auth': 'required'}
+        init_config = {}
+
+        # Trigger lazy import
+        http = RequestsWrapper(instance, init_config)
+        assert isinstance(http.options['auth'], requests_kerberos.HTTPKerberosAuth)
+
+        with mock.patch('datadog_checks.base.utils.http.requests_kerberos.HTTPKerberosAuth') as m:
+            RequestsWrapper(instance, init_config)
+
+            m.assert_called_once_with(
+                mutual_authentication=requests_kerberos.REQUIRED,
+                delegate=False,
+                force_preemptive=False,
+                hostname_override=None,
+                principal=None,
+            )
+
+        with mock.patch('datadog_checks.base.utils.http.requests_kerberos.HTTPKerberosAuth') as m:
+            RequestsWrapper({'kerberos_auth': 'optional'}, init_config)
+
+            m.assert_called_once_with(
+                mutual_authentication=requests_kerberos.OPTIONAL,
+                delegate=False,
+                force_preemptive=False,
+                hostname_override=None,
+                principal=None,
+            )
+
+        with mock.patch('datadog_checks.base.utils.http.requests_kerberos.HTTPKerberosAuth') as m:
+            RequestsWrapper({'kerberos_auth': 'disabled'}, init_config)
+
+            m.assert_called_once_with(
+                mutual_authentication=requests_kerberos.DISABLED,
+                delegate=False,
+                force_preemptive=False,
+                hostname_override=None,
+                principal=None,
+            )
+
+    def test_config_kerberos_shortcut(self):
+        instance = {'kerberos_auth': True}
+        init_config = {}
+
+        # Trigger lazy import
+        http = RequestsWrapper(instance, init_config)
+        assert isinstance(http.options['auth'], requests_kerberos.HTTPKerberosAuth)
+
+        with mock.patch('datadog_checks.base.utils.http.requests_kerberos.HTTPKerberosAuth') as m:
+            RequestsWrapper(instance, init_config)
+
+            m.assert_called_once_with(
+                mutual_authentication=requests_kerberos.REQUIRED,
+                delegate=False,
+                force_preemptive=False,
+                hostname_override=None,
+                principal=None,
+            )
+
+    def test_config_kerberos_unknown(self):
+        instance = {'kerberos_auth': 'unknown'}
+        init_config = {}
+
+        with pytest.raises(ConfigurationError):
+            RequestsWrapper(instance, init_config)
+
+    def test_config_kerberos_legacy_remap(self):
+        instance = {'kerberos': True}
+        init_config = {}
+
+        # Trigger lazy import
+        http = RequestsWrapper(instance, init_config)
+        assert isinstance(http.options['auth'], requests_kerberos.HTTPKerberosAuth)
+
+        with mock.patch('datadog_checks.base.utils.http.requests_kerberos.HTTPKerberosAuth') as m:
+            RequestsWrapper(instance, init_config)
+
+            m.assert_called_once_with(
+                mutual_authentication=requests_kerberos.REQUIRED,
+                delegate=False,
+                force_preemptive=False,
+                hostname_override=None,
+                principal=None,
+            )
 
 
 class TestProxies:
